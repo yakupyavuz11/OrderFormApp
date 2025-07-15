@@ -5,10 +5,11 @@ import {
   View,
   StyleSheet,
   TextInput,
-  TouchableOpacity
+  TouchableOpacity,
+  Alert
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './FirebaseConfig';
 
 export default function OrderList() {
@@ -17,22 +18,48 @@ export default function OrderList() {
   const navigation = useNavigation();
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'orders'));
-        const data = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.seconds || 0
-        }));
-        const sortedData = data.sort((a, b) => b.createdAt - a.createdAt);
-        setOrders(sortedData);
-      } catch (error) {
-        console.error('Veri çekme hatası:', error);
-      }
-    };
     fetchOrders();
   }, []);
+
+  const fetchOrders = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'orders'));
+      const data = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.seconds || 0
+      }));
+      const sortedData = data.sort((a, b) => b.createdAt - a.createdAt);
+      setOrders(sortedData);
+    } catch (error) {
+      console.error('Veri çekme hatası:', error);
+    }
+  };
+
+  const handleDelete = (id) => {
+    Alert.alert(
+      "⚠️ Silmek istediğine emin misin?",
+      "Bu işlem geri alınamaz.",
+      [
+        {
+          text: "Vazgeç",
+          style: "cancel"
+        },
+        {
+          text: "Sil",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'orders', id));
+              fetchOrders(); // veriyi yeniden çek
+            } catch (error) {
+              console.error('Silme hatası:', error);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const filteredOrders = orders.filter(order =>
     order.products?.some(product =>
@@ -41,11 +68,16 @@ export default function OrderList() {
   );
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity onPress={() => navigation.navigate('Detay', { order: item })}>
-      <View style={styles.card}>
+    <View style={styles.card}>
+      <View style={styles.topRow}>
         <Text style={styles.date}>
           📅 {new Date(item.createdAt * 1000).toLocaleString('tr-TR')}
         </Text>
+        <TouchableOpacity onPress={() => handleDelete(item.id)}>
+          <Text style={styles.delete}>🗑️</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity onPress={() => navigation.navigate('Detay', { order: item })}>
         <Text style={styles.title}>{item.orderCreator}</Text>
         <Text style={styles.line}>🧾 Sipariş Sahibi: {item.customerName}</Text>
         <Text style={styles.line}>🚚 Araç: {item.vehicleType} - {item.vehiclePlate}</Text>
@@ -69,8 +101,8 @@ export default function OrderList() {
         <Text style={styles.note}>
           📝 Not: {item.deliveryNote ? item.deliveryNote : 'Belirtilmemiş'}
         </Text>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -81,13 +113,16 @@ export default function OrderList() {
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
-      <FlatList
-        data={filteredOrders}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={<Text style={styles.empty}>Sonuç bulunamadı.</Text>}
-      />
+      {filteredOrders.length === 0 ? (
+        <Text style={styles.empty}>🙈 Oppsss! Hiç veri yok</Text>
+      ) : (
+        <FlatList
+          data={filteredOrders}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+        />
+      )}
     </View>
   );
 }
@@ -118,10 +153,18 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 3
   },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
   date: {
     fontSize: 13,
     color: '#999',
     marginBottom: 5
+  },
+  delete: {
+    fontSize: 18,
+    color: '#d11a2a'
   },
   title: {
     fontSize: 18,
@@ -161,7 +204,8 @@ const styles = StyleSheet.create({
   },
   empty: {
     textAlign: 'center',
-    marginTop: 20,
-    color: '#888'
+    fontSize: 16,
+    marginTop: 30,
+    color: '#999'
   }
 });
